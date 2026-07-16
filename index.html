@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Path to Citizenship — Civics Test Game</title>
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand" onclick="navigateTo('home')">
+      <span class="brand-star">★</span>
+      <span class="brand-text">Path to Citizenship</span>
+    </div>
+    <nav class="tabs" id="mainNav">
+      <button data-view="home">Home</button>
+      <button data-view="flashcards">Flashcards</button>
+      <button data-view="interview">Mock Interview</button>
+      <button data-view="timed">Speed Round</button>
+      <button data-view="stats">Stats</button>
+      <button data-view="settings">Settings</button>
+    </nav>
+    <div class="header-stats" id="headerStats"></div>
+  </header>
+
+  <main id="app"></main>
+
+  <footer class="app-footer">
+    <p>Based on the official USCIS 128 Civics Questions and Answers (2025 version, M-1778). For questions about the current President, Vice President, Speaker of the House, or Chief Justice, always verify at
+      <strong>uscis.gov/citizenship/testupdates</strong> before your real interview — this game never guesses those for you.</p>
+  </footer>
+
+  <script src="js/data.js"></script>
+  <script src="js/states.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/gamification.js"></script>
+  <script src="js/confetti.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/flashcards.js"></script>
+  <script src="js/interview.js"></script>
+  <script src="js/timed.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
