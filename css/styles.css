@@ -259,6 +259,40 @@ body {
 
 .self-grade-row { display: flex; gap: 12px; justify-content: center; margin-top: 18px; }
 
+.options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+  text-align: left;
+}
+.option-btn {
+  padding: 14px 18px;
+  font-size: 1rem;
+  text-align: left;
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.grade-banner {
+  font-size: 1.15rem;
+  font-weight: 700;
+  padding: 12px 16px;
+  border-radius: 10px;
+  margin-bottom: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+}
+.grade-banner .typed-answer {
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+.grade-correct { background: rgba(46, 139, 87, 0.12); color: #2e8b57; }
+.grade-incorrect { background: rgba(178, 34, 52, 0.1); color: var(--red); }
+
 .result-screen { text-align: center; }
 .result-score { font-size: 3rem; font-weight: 800; color: var(--navy); margin: 10px 0; }
 .result-pass { color: #2e8b57; }

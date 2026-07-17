@@ -66,6 +66,97 @@ function hasResolvedAnswer(question, profile) {
   return resolveAnswers(question, profile).length > 0;
 }
 
+const ANSWER_STOPWORDS = new Set([
+  "the", "a", "an", "of", "to", "for", "and", "or", "in", "on", "is", "are",
+  "was", "were", "it", "its", "we", "our", "us", "that", "who", "what", "s",
+]);
+
+function normalizeAnswerText(str) {
+  return String(str || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function significantWords(str) {
+  return normalizeAnswerText(str)
+    .split(" ")
+    .filter((w) => w && !ANSWER_STOPWORDS.has(w) && w.length > 1);
+}
+
+// Auto-grades a typed answer against a list of accepted answer strings.
+// Only one accepted answer needs to match, same as the old reveal-and-self-grade
+// list — the player just needs to name a valid answer, not all of them.
+function isAnswerCorrect(userInput, acceptedAnswers) {
+  const userNorm = normalizeAnswerText(userInput);
+  if (!userNorm || !acceptedAnswers || !acceptedAnswers.length) return false;
+  const userWords = new Set(significantWords(userInput));
+
+  return acceptedAnswers.some((raw) => {
+    const ansNorm = normalizeAnswerText(raw);
+    if (!ansNorm) return false;
+    if (ansNorm === userNorm) return true;
+
+    const ansWords = significantWords(raw);
+    if (!ansWords.length) return false;
+
+    const matched = ansWords.filter((w) => userWords.has(w));
+
+    // Every meaningful word in the accepted answer shows up in the typed answer.
+    if (matched.length === ansWords.length) return true;
+
+    // Multi-word name-like answers ("James Madison"): the surname alone is
+    // accepted, the same way it would be in a real spoken interview.
+    if (ansWords.length >= 2 && userWords.has(ansWords[ansWords.length - 1])) return true;
+
+    // Longer phrases: accept a strong partial keyword match.
+    if (ansWords.length >= 3 && matched.length / ansWords.length >= 0.7) return true;
+
+    return false;
+  });
+}
+
+const DYNAMIC_PROFILE_FIELDS = ["senator", "representative", "governor", "president", "vp", "speaker", "chiefJustice"];
+
+// Builds a multiple-choice option set for a question: one correct answer plus
+// up to 3 wrong-but-plausible distractors, all pre-shuffled. Returns null if
+// there isn't enough material to build real choices (e.g. a "answers will
+// vary" question where the player has only filled in one profile field) —
+// callers should fall back to a self-graded reveal in that case.
+function buildAnswerOptions(question, profile) {
+  const resolved = resolveAnswers(question, profile);
+  if (!resolved.length) return null;
+  const correct = resolved[Math.floor(Math.random() * resolved.length)];
+  const correctKey = correct.trim().toLowerCase();
+
+  let pool = [];
+  if (question.dynamic === "stateCapital") {
+    pool = US_STATES.filter((s) => s.capital).map((s) => s.capital);
+  } else if (question.dynamic) {
+    pool = DYNAMIC_PROFILE_FIELDS.filter((f) => f !== question.dynamic)
+      .map((f) => profile[f])
+      .filter(Boolean);
+  } else {
+    const others = CIVICS_QUESTIONS.filter((q) => q.id !== question.id && q.section === question.section && !q.dynamic);
+    pool = shuffleArray(others).map((q) => q.answers[Math.floor(Math.random() * q.answers.length)]);
+  }
+
+  const seen = new Set([correctKey]);
+  const distractors = [];
+  for (const candidate of shuffleArray(pool)) {
+    if (!candidate) continue;
+    const key = candidate.trim().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    distractors.push(candidate);
+    if (distractors.length >= 3) break;
+  }
+
+  if (!distractors.length) return null;
+  return { correct, options: shuffleArray([correct, ...distractors]) };
+}
+
 function showToast(iconHtml, text) {
   const toast = document.createElement("div");
   toast.className = "toast";

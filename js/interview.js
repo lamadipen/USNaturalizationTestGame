@@ -1,11 +1,17 @@
 // Mock Interview Simulator — mirrors the real USCIS civics interview format.
+// The player picks their answer from multiple-choice options and the game
+// grades it for them against the accepted answer(s) (or the player's own
+// profile value, for questions like "who is your governor").
 
 const InterviewState = {
   mode: null, // 'full' | '6520'
   questions: [],
   index: 0,
   results: [], // array of true/false, same length as questions answered so far
-  revealed: false,
+  answered: false, // has the current question been graded yet?
+  lastCorrect: null,
+  lastInput: "",
+  optionsSet: null, // { correct, options } built once per question, or null if unbuildable
 };
 
 const FULL_COUNT = 20;
@@ -23,7 +29,10 @@ function startInterview(mode) {
   }
   InterviewState.index = 0;
   InterviewState.results = [];
-  InterviewState.revealed = false;
+  InterviewState.answered = false;
+  InterviewState.lastCorrect = null;
+  InterviewState.lastInput = "";
+  InterviewState.optionsSet = null;
   renderInterview();
 }
 
@@ -33,7 +42,7 @@ function renderInterview() {
   if (!InterviewState.mode) {
     app.innerHTML = `
       <h2 class="screen-title">Mock Interview Simulator</h2>
-      <p class="screen-subtitle">Just like the real USCIS interview: the officer asks, you answer out loud, then reveal to self-grade.</p>
+      <p class="screen-subtitle">Just like the real USCIS interview: the officer asks, you recall the answer out loud, then pick it from the choices — the game grades it for you.</p>
       <div class="mode-grid">
         <div class="mode-card" id="startFull">
           <div class="mode-icon">🇺🇸</div>
@@ -61,6 +70,13 @@ function renderInterview() {
   const q = InterviewState.questions[InterviewState.index];
   const profile = Store.get().profile;
   const answers = resolveAnswers(q, profile);
+  const hasAnswer = answers.length > 0;
+
+  // Build (and cache) the option set once per question, the first time it's rendered.
+  if (!InterviewState.answered && InterviewState.optionsSet === null) {
+    InterviewState.optionsSet = buildAnswerOptions(q, profile);
+  }
+  const optionsSet = InterviewState.optionsSet;
 
   const dots = InterviewState.questions
     .map((_, i) => {
@@ -71,48 +87,101 @@ function renderInterview() {
     })
     .join("");
 
+  let answerAreaHtml;
+  if (!InterviewState.answered) {
+    if (optionsSet) {
+      answerAreaHtml = `
+        <div class="options-grid">
+          ${optionsSet.options
+            .map((opt, i) => `<button class="btn btn-outline option-btn" data-option-index="${i}">${escapeHtml(opt)}</button>`)
+            .join("")}
+        </div>`;
+    } else {
+      answerAreaHtml = hasAnswer
+        ? `
+        <div class="reveal-box">
+          <strong>Accepted answer(s):</strong>
+          <ul>${answers.map((a) => `<li>${escapeHtml(a)}</li>`).join("")}</ul>
+        </div>
+        <p class="form-note"><em>Not enough contrasting answers to build multiple-choice options here — self-grade based on whether you knew it.</em></p>
+        <div class="self-grade-row">
+          <button class="btn btn-primary" data-self-correct="true">✅ I got it right</button>
+          <button class="btn" style="background:#e2e6ee;" data-self-correct="false">❌ I missed it</button>
+        </div>`
+        : `
+        <p class="form-note"><em>No saved answer for this "answers will vary" question — add it in Settings so the game can grade it. For now, self-grade based on whether you knew it.</em></p>
+        <div class="self-grade-row">
+          <button class="btn btn-primary" data-self-correct="true">✅ I got it right</button>
+          <button class="btn" style="background:#e2e6ee;" data-self-correct="false">❌ I missed it</button>
+        </div>`;
+    }
+  } else {
+    const correct = InterviewState.lastCorrect;
+    answerAreaHtml = `
+      <div class="grade-banner ${correct ? "grade-correct" : "grade-incorrect"}">
+        ${correct ? "✅ Correct!" : "❌ Not quite."}
+        ${InterviewState.lastInput ? `<span class="typed-answer">You picked: "${escapeHtml(InterviewState.lastInput)}"</span>` : ""}
+      </div>
+      <div class="reveal-box">
+        <strong>Accepted answer(s):</strong>
+        ${
+          answers.length
+            ? `<ul>${answers.map((a) => `<li>${escapeHtml(a)}</li>`).join("")}</ul>`
+            : `<p><em>No saved answer — add it in Settings.</em></p>`
+        }
+      </div>
+      <div class="rate-row">
+        <button class="btn btn-primary" id="nextQBtn">${InterviewState.index + 1 >= total ? "See Results" : "Next Question"}</button>
+      </div>`;
+  }
+
   app.innerHTML = `
     <h2 class="screen-title">${InterviewState.mode === "full" ? "Full Interview" : "65/20 Interview"}</h2>
     <div class="progress-strip">${dots}</div>
     <div class="question-panel">
       <div class="qnum">Question ${InterviewState.index + 1} of ${total} — ${q.section}${q.starred ? " ★" : ""}</div>
       <div class="qtext">${escapeHtml(q.question)}</div>
-      ${
-        InterviewState.revealed
-          ? `
-        <div class="reveal-box">
-          <strong>Accepted answer(s):</strong>
-          ${
-            answers.length
-              ? `<ul>${answers.map((a) => `<li>${escapeHtml(a)}</li>`).join("")}</ul>`
-              : `<p><em>No saved answer for this "answers will vary" question — add it in Settings. For now, self-grade based on whether you knew it.</em></p>`
-          }
-        </div>
-        <div class="self-grade-row">
-          <button class="btn btn-primary" data-correct="true">✅ I got it right</button>
-          <button class="btn" style="background:#e2e6ee;" data-correct="false">❌ I missed it</button>
-        </div>
-      `
-          : `<button class="btn btn-secondary" id="revealBtn">Reveal Answer</button>`
-      }
+      ${answerAreaHtml}
     </div>`;
 
-  const revealBtn = document.getElementById("revealBtn");
-  if (revealBtn) revealBtn.onclick = () => { InterviewState.revealed = true; renderInterview(); };
-
-  document.querySelectorAll("[data-correct]").forEach((btn) => {
+  document.querySelectorAll("[data-option-index]").forEach((btn) => {
     btn.onclick = () => {
-      const isCorrect = btn.dataset.correct === "true";
-      InterviewState.results.push(isCorrect);
-      const mastery = Store.getMastery(q.id).level;
-      Store.setMastery(q.id, isCorrect ? Math.min(5, mastery + 1) : Math.max(0, mastery - 1));
-      if (isCorrect) awardXp(15);
-      InterviewState.index++;
-      InterviewState.revealed = false;
-      renderInterview();
-      updateHeaderStats();
+      const picked = optionsSet.options[Number(btn.dataset.optionIndex)];
+      const isCorrect = picked.trim().toLowerCase() === optionsSet.correct.trim().toLowerCase();
+      gradeInterviewAnswer(q, isCorrect, picked);
     };
   });
+
+  document.querySelectorAll("[data-self-correct]").forEach((btn) => {
+    btn.onclick = () => {
+      const isCorrect = btn.dataset.selfCorrect === "true";
+      gradeInterviewAnswer(q, isCorrect, "");
+    };
+  });
+
+  const nextBtn = document.getElementById("nextQBtn");
+  if (nextBtn) {
+    nextBtn.onclick = () => {
+      InterviewState.index++;
+      InterviewState.answered = false;
+      InterviewState.lastCorrect = null;
+      InterviewState.lastInput = "";
+      InterviewState.optionsSet = null;
+      renderInterview();
+    };
+  }
+}
+
+function gradeInterviewAnswer(q, isCorrect, typedValue) {
+  InterviewState.results.push(isCorrect);
+  InterviewState.answered = true;
+  InterviewState.lastCorrect = isCorrect;
+  InterviewState.lastInput = typedValue;
+  const mastery = Store.getMastery(q.id).level;
+  Store.setMastery(q.id, isCorrect ? Math.min(5, mastery + 1) : Math.max(0, mastery - 1));
+  if (isCorrect) awardXp(15);
+  renderInterview();
+  updateHeaderStats();
 }
 
 function renderInterviewResults() {
